@@ -10,13 +10,20 @@
         "username": "citizen",
         "password": "scrypt:32768:8:1$L47RLLTNBE7K6Anf$985e6a8d5d590fdea78a130f7df0f72b3286ef098c41d4647804afabc5b63b68bb4d0d6c16f371107bd5a357da4a72e721fd09cf57b1d040d4c162fee5d6ee93",
         "role": "citizen",
-        "coins": 15,
-        "reports": 3
+        "coins": 20,
+        "reports": 4
     },
     {
         "username": "admin2",
         "password": "scrypt:32768:8:1$irwScZ3gCZiWQVq5$6d96aa94ba84894fd62e80a6b0b73541e8992aab9085cc585aa9745b8af7ce487d5f5aa7d3475f041d7b98f1e4ac5d572ed3160f7a2127559599520b872acfcd",
         "role": "admin",
+        "coins": 0,
+        "reports": 0
+    },
+    {
+        "username": "KARSH",
+        "password": "scrypt:32768:8:1$SmcKaLDiIsunRzn5$d6b9bbabcd4291eb6b493acde32cc9f310f108636a2f835838d2b380c866f77b6666a704a9c205820620ce75229cd7599773f07a6556223706cb41ae2be5994e",
+        "role": "citizen",
         "coins": 0,
         "reports": 0
     }

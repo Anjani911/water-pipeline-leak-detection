@@ -110,5 +110,12 @@
         "filetype": "dataset",
         "path": "uploads\\final_raipur_water_datasetin_1.csv",
         "timestamp": "2025-11-07 17:11:06"
+    },
+    {
+        "username": "citizen",
+        "filename": "skull.png",
+        "filetype": "photo",
+        "path": "uploads\\skull.png",
+        "timestamp": "2025-11-07 21:46:02"
     }
 ]
