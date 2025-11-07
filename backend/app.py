@@ -143,13 +143,25 @@ def upload_dataset():
 @app.route("/retrain_model", methods=["POST"])
 def retrain_model_endpoint():
     try:
-        dataset_path = request.json.get("dataset_path")
-        if not os.path.exists(dataset_path):
-            return jsonify({"error": "Dataset not found"}), 404
+        # Accept uploaded CSV directly (no path required)
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided. Please upload CSV with key 'file'."}), 400
 
-        retrain_model(dataset_path)
-        log_event("retrain_model", "admin", {"dataset": dataset_path})
-        return jsonify({"message": "✅ Model retrained successfully"})
+        file = request.files["file"]
+        # Read CSV into DataFrame
+        try:
+            df = pd.read_csv(file)
+        except Exception as e:
+            return jsonify({"error": f"Failed to read CSV: {e}"}), 400
+
+        # Call retrain_model passing DataFrame directly; save model to MODEL_PATH
+        result = retrain_model(MODEL_PATH, df, MODEL_PATH)
+        if isinstance(result, dict) and result.get("status") == "success":
+            log_event("retrain_model", "admin", {"rows": len(df)})
+            return jsonify({"message": "✅ Model retrained successfully", "detail": result.get("message"), "features_used": result.get("features_used"), "categorical": result.get("categorical")}), 200
+        else:
+            msg = result.get("message") if isinstance(result, dict) else str(result)
+            return jsonify({"error": msg}), 500
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -283,14 +295,137 @@ def predict():
             return jsonify({"error": "No file provided"}), 400
         file = request.files["file"]
         df = pd.read_csv(file)
+
         if not model:
             return jsonify({"error": "Model not loaded"}), 500
 
-        predictions = model.predict(df)
-        df["Leak_Prediction"] = predictions.tolist()
-        result = df.to_dict(orient="records")
-        log_event("predict", "admin", {"rows": len(result)})
-        return jsonify({"predictions": result})
+        # Helper to normalize column names for matching
+        def norm_col(c: str) -> str:
+            return str(c).lower().strip().replace(" ", "_").replace("-", "_").replace("__", "_")
+
+        # Build mapping of normalized incoming column -> original column name
+        incoming = {norm_col(c): c for c in df.columns}
+
+        # Determine expected features from the model if available
+        expected_features = None
+        try:
+            if hasattr(model, "feature_names_in_"):
+                expected_features = list(model.feature_names_in_)
+        except Exception:
+            expected_features = None
+
+        # Fallback expected features (common ones used in training)
+        if not expected_features:
+            expected_features = [
+                "flow_rate_lps",
+                "latitude",
+                "longitude",
+                "temperature_c",
+            ]
+
+        # Try to map incoming columns to expected feature names
+        rename_map = {}
+        for feat in expected_features:
+            nfeat = norm_col(feat)
+            if nfeat in incoming:
+                rename_map[incoming[nfeat]] = feat
+            else:
+                # try variants: remove underscores
+                compact = nfeat.replace("_", "")
+                matched = next((orig for k, orig in incoming.items() if k.replace("_", "") == compact), None)
+                if matched:
+                    rename_map[matched] = feat
+
+        # Apply renaming so DataFrame columns match expected feature names where possible
+        if rename_map:
+            df = df.rename(columns=rename_map)
+
+        # For any expected feature missing, add with a safe default (0 or median if possible)
+        missing_features = [f for f in expected_features if f not in df.columns]
+        for mf in missing_features:
+            # prefer numeric median from other columns if available, else 0
+            default_val = 0
+            try:
+                # if DataFrame has numeric columns, use their median as a reasonable default
+                if not df.select_dtypes(include=["number"]).empty:
+                    default_val = float(df.select_dtypes(include=["number"]).median().median())
+            except Exception:
+                default_val = 0
+            df[mf] = default_val
+
+        # Prepare input matrix: select expected features in order
+        X = df[expected_features].copy()
+
+        # Coerce expected feature columns to numeric where possible. Non-numeric values
+        # (like 'Devendra Nagar Zone') will become NaN and then be filled with a
+        # sensible default (column median or 0). This avoids conversion errors.
+        for col in X.columns:
+            try:
+                X[col] = pd.to_numeric(X[col], errors="coerce")
+                if X[col].isna().all():
+                    # if entire column became NaN, fill with 0
+                    X[col] = X[col].fillna(0)
+                else:
+                    # fill NaNs with median of that column
+                    med = float(X[col].median()) if not X[col].dropna().empty else 0.0
+                    X[col] = X[col].fillna(med)
+            except Exception:
+                # safest fallback: replace non-numeric with 0
+                X[col] = pd.to_numeric(X[col], errors="coerce").fillna(0)
+
+        # Attempt prediction. Prefer passing the full DataFrame to let a saved
+        # pipeline (preprocessor + estimator) handle column selection/encoding.
+        preds = None
+        try:
+            preds = model.predict(df)
+        except Exception:
+            # If that fails, try the prepared numeric matrix X (older models)
+            try:
+                preds = model.predict(X)
+            except Exception:
+                try:
+                    preds = model.predict(X.values)
+                except Exception as e2:
+                    traceback.print_exc()
+                    return jsonify({"error": "Prediction failed: " + str(e2)}), 500
+
+        # Normalize predictions to ints where possible
+        try:
+            preds_list = [int(x) for x in (preds.tolist() if hasattr(preds, "tolist") else preds)]
+        except Exception:
+            preds_list = list(preds)
+
+        df["Predicted_Leak"] = preds_list
+
+        leak_count = int(sum(1 for v in preds_list if v == 1))
+        no_leak_count = int(sum(1 for v in preds_list if v == 0))
+
+        # Compute per-zone summary if zone column exists
+        zone_candidates = ["zone_id", "zone", "area", "zoneid"]
+        zone_col = None
+        for c in df.columns:
+            if c.lower() in zone_candidates:
+                zone_col = c
+                break
+        zone_summary = []
+        if zone_col:
+            grouped = df.groupby(zone_col)["Predicted_Leak"].agg(["sum", "count"]).reset_index()
+            for _, row in grouped.iterrows():
+                zone_summary.append({
+                    "zone": row[zone_col],
+                    "leak_count": int(row["sum"]),
+                    "total": int(row["count"]),
+                    "leak_rate": float(row["sum"]) / int(row["count"]) if int(row["count"])>0 else 0.0
+                })
+
+        result = df.fillna("").to_dict(orient="records")
+        log_event("predict", "admin", {"rows": len(result), "leak_count": leak_count})
+
+        return jsonify({
+            "summary": {"leak_count": leak_count, "no_leak_count": no_leak_count},
+            "zone_summary": zone_summary,
+            "data": result
+        })
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -306,9 +441,6 @@ def report_leak():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ------------------------------------------------------------
-# 🚀 Run Server
-# ------------------------------------------------------------
 if __name__ == "__main__":
     print("✅ Flask backend running on http://127.0.0.1:5000")
     app.run(host="0.0.0.0", port=5000, debug=True)

@@ -34,18 +34,14 @@ const RetrainModel = () => {
     formData.append("file", file);
 
     try {
-      // First upload dataset to get a server-side path
-      const uploadResp = await api.post("/upload_dataset", formData, {
+      // Directly POST the file to /retrain_model (no server path handling required)
+      const retrainResp = await api.post("/retrain_model", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
       });
 
-      const datasetPath = uploadResp.data.path;
-
-      // Then call retrain_model with the dataset_path
-      const retrainResp = await api.post("/retrain_model", { dataset_path: datasetPath });
-      setResult({ ...uploadResp.data, ...retrainResp.data });
+      setResult(retrainResp.data);
       toast.success("Model retrained successfully");
       setFile(null);
     } catch (error: any) {
@@ -117,22 +113,16 @@ const RetrainModel = () => {
             <div className="flex-1">
               <h3 className="text-xl font-bold mb-2">Retraining Complete</h3>
               <div className="space-y-2 text-sm">
-                {result.accuracy && (
+                {result.features_used && (
                   <p>
-                    <span className="font-semibold">Accuracy:</span>{" "}
-                    {(result.accuracy * 100).toFixed(2)}%
+                    <span className="font-semibold">Features used:</span>{" "}
+                    {Array.isArray(result.features_used) ? result.features_used.join(", ") : String(result.features_used)}
                   </p>
                 )}
-                {result.samples && (
+                {result.categorical && result.categorical.length > 0 && (
                   <p>
-                    <span className="font-semibold">Training Samples:</span>{" "}
-                    {result.samples}
-                  </p>
-                )}
-                {result.model_path && (
-                  <p>
-                    <span className="font-semibold">Model Path:</span>{" "}
-                    {result.model_path}
+                    <span className="font-semibold">Categorical columns:</span>{" "}
+                    {result.categorical.join(", ")}
                   </p>
                 )}
                 {result.message && (
