@@ -552,5 +552,212 @@
         "details": {
             "rows": 1000
         }
+    },
+    {
+        "timestamp": "2025-11-08 00:54:01",
+        "action": "retrain_model",
+        "username": "admin",
+        "details": {
+            "rows": 1000
+        }
+    },
+    {
+        "timestamp": "2025-11-08 00:54:09",
+        "action": "predict",
+        "username": "admin",
+        "details": {
+            "rows": 1000,
+            "leak_count": 25
+        }
+    },
+    {
+        "timestamp": "2025-11-08 00:55:22",
+        "action": "login",
+        "username": "citizen",
+        "details": {}
+    },
+    {
+        "timestamp": "2025-11-08 00:57:19",
+        "action": "login",
+        "username": "admin",
+        "details": {}
+    },
+    {
+        "timestamp": "2025-11-08 00:57:36",
+        "action": "retrain_model",
+        "username": "admin",
+        "details": {
+            "rows": 1000
+        }
+    },
+    {
+        "timestamp": "2025-11-08 00:57:47",
+        "action": "predict",
+        "username": "admin",
+        "details": {
+            "rows": 1000,
+            "leak_count": 28
+        }
+    },
+    {
+        "timestamp": "2025-11-08 01:09:50",
+        "action": "login",
+        "username": "admin",
+        "details": {}
+    },
+    {
+        "timestamp": "2025-11-08 01:10:06",
+        "action": "retrain_model",
+        "username": "admin",
+        "details": {
+            "rows": 1000
+        }
+    },
+    {
+        "timestamp": "2025-11-08 01:11:20",
+        "action": "predict",
+        "username": "admin",
+        "details": {
+            "rows": 1000,
+            "leak_count": 28
+        }
+    },
+    {
+        "timestamp": "2025-11-08 01:12:23",
+        "action": "login",
+        "username": "citizen",
+        "details": {}
+    },
+    {
+        "timestamp": "2025-11-08 01:23:11",
+        "action": "login",
+        "username": "admin",
+        "details": {}
+    },
+    {
+        "timestamp": "2025-11-08 01:32:58",
+        "action": "predict",
+        "username": "admin",
+        "details": {
+            "rows": 1000,
+            "leak_count": 25
+        }
+    },
+    {
+        "timestamp": "2025-11-08 02:01:39",
+        "action": "login",
+        "username": "admin",
+        "details": {}
+    },
+    {
+        "timestamp": "2025-11-08 02:01:48",
+        "action": "login",
+        "username": "admin",
+        "details": {}
+    },
+    {
+        "timestamp": "2025-11-08 02:13:12",
+        "action": "retrain_model",
+        "username": "admin",
+        "details": {
+            "rows": 1000
+        }
+    },
+    {
+        "timestamp": "2025-11-08 02:13:24",
+        "action": "predict",
+        "username": "admin",
+        "details": {
+            "rows": 1000,
+            "leak_count": 25
+        }
+    },
+    {
+        "timestamp": "2025-11-08 02:13:54",
+        "action": "login",
+        "username": "citizen",
+        "details": {}
+    },
+    {
+        "timestamp": "2025-11-08 02:20:52",
+        "action": "login",
+        "username": "admin",
+        "details": {}
+    },
+    {
+        "timestamp": "2025-11-08 02:21:06",
+        "action": "retrain_model",
+        "username": "admin",
+        "details": {
+            "rows": 1000
+        }
+    },
+    {
+        "timestamp": "2025-11-08 02:21:10",
+        "action": "predict",
+        "username": "admin",
+        "details": {
+            "rows": 1000,
+            "leak_count": 25
+        }
+    },
+    {
+        "timestamp": "2025-11-08 02:21:45",
+        "action": "login",
+        "username": "citizen",
+        "details": {}
+    },
+    {
+        "timestamp": "2025-11-08 02:22:07",
+        "action": "login",
+        "username": "admin",
+        "details": {}
+    },
+    {
+        "timestamp": "2025-11-08 03:02:47",
+        "action": "login",
+        "username": "admin",
+        "details": {}
+    },
+    {
+        "timestamp": "2025-11-08 03:03:40",
+        "action": "retrain_model",
+        "username": "admin",
+        "details": {
+            "rows": 1000
+        }
+    },
+    {
+        "timestamp": "2025-11-08 03:04:50",
+        "action": "predict",
+        "username": "admin",
+        "details": {
+            "rows": 1000,
+            "leak_count": 25
+        }
+    },
+    {
+        "timestamp": "2025-11-08 04:08:29",
+        "action": "predict",
+        "username": "admin",
+        "details": {
+            "rows": 1000,
+            "leak_count": 28
+        }
+    },
+    {
+        "timestamp": "2025-11-08 04:28:32",
+        "action": "login",
+        "username": "admin",
+        "details": {}
+    },
+    {
+        "timestamp": "2025-11-08 04:35:28",
+        "action": "predict",
+        "username": "admin",
+        "details": {
+            "rows": 1000,
+            "leak_count": 28
+        }
     }
 ]
