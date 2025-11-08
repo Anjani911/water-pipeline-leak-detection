@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,16 +19,49 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
+// map imports
+import { MapContainer, TileLayer, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+// leaflet.heat plugin augments L with heatLayer
+import "leaflet.heat";
 
 const PredictAndReport = () => {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [predictions, setPredictions] = useState<any[]>([]);
   const [summary, setSummary] = useState<{ leak_count: number; no_leak_count: number } | null>(null);
+  const [heatPoints, setHeatPoints] = useState<Array<[number, number, number, string, number]>>([]);
+  const [heatLoading, setHeatLoading] = useState(false);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null;
     setFile(f);
+  };
+
+  const generateHeatmap = async () => {
+    if (!file) return toast.error("Upload the CSV first to generate heatmap");
+    setHeatLoading(true);
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const resp = await api.post('/heatmap_by_zone', form, { headers: { "Content-Type": "multipart/form-data" } });
+      if (resp.data && Array.isArray(resp.data.points) && resp.data.points.length > 0) {
+        // points: [[lat, lon, weight, zone, max_flow], ...]
+        setHeatPoints(resp.data.points);
+        toast.success('Heatmap points loaded');
+      } else if (resp.data && resp.data.zones) {
+        toast.info('No spatial coords found in CSV; received zone stats. Provide lat/lon for heatmap.');
+        setHeatPoints([]);
+      } else {
+        toast.error('No heatmap points returned');
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.response?.data?.error || 'Heatmap generation failed');
+    } finally {
+      setHeatLoading(false);
+    }
   };
 
   const runPredict = async (e: React.FormEvent) => {
@@ -71,6 +104,29 @@ const PredictAndReport = () => {
             <h2 className="text-2xl font-bold">Predict from CSV</h2>
             <p className="text-sm text-muted-foreground">Upload a CSV to run leak predictions using the server model</p>
           </div>
+        </div>
+
+        <div className="mt-6">
+          <h3 className="text-lg font-semibold mb-2">Heatmap</h3>
+          <p className="text-sm text-muted-foreground">Generate a per-zone heatmap (server aggregation) from the uploaded CSV.</p>
+          <div className="mt-2 flex gap-2">
+            <Button onClick={generateHeatmap} disabled={heatLoading || !file}>
+              {heatLoading ? 'Generating...' : 'Generate Heatmap'}
+            </Button>
+            <Button onClick={() => { setHeatPoints([]); }} variant="ghost">Clear</Button>
+          </div>
+
+          {heatPoints.length > 0 && (
+            <div className="mt-4" style={{ height: 360 }}>
+              <MapContainer style={{ height: '100%', width: '100%' }} center={[heatPoints[0][0], heatPoints[0][1]]} zoom={12} scrollWheelZoom={false}>
+                <TileLayer
+                  attribution='&copy; OpenStreetMap contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                <HeatLayer points={heatPoints} />
+              </MapContainer>
+            </div>
+          )}
         </div>
 
         <form onSubmit={runPredict} className="space-y-4">
@@ -188,6 +244,26 @@ const PredictAndReport = () => {
 
 export default PredictAndReport;
 
+function HeatLayer({ points }: { points: Array<[number, number, number, string, number]> }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map || !points || points.length === 0) return;
+    // convert points to [lat, lon, weight]
+    const latlngs = points.map(p => [p[0], p[1], p[2]] as [number, number, number]);
+    const heat = (L as any).heatLayer(latlngs, { radius: 25, blur: 15, maxZoom: 17 });
+    heat.addTo(map);
+    try {
+      const bounds = L.latLngBounds(latlngs.map((p: any) => [p[0], p[1]]));
+      map.fitBounds(bounds.pad(0.2));
+    } catch (e) {
+      // ignore
+    }
+    return () => {
+      try { map.removeLayer(heat); } catch (e) {}
+    };
+  }, [map, points]);
+  return null;
+}
 function UsageAnalysisTable({ data }: { data: any[] }) {
   const summary = useMemo(() => {
     // compute water loss per row when possible

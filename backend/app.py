@@ -441,6 +441,143 @@ def report_leak():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+@app.route("/heatmap_by_zone", methods=["POST"])
+def heatmap_by_zone():
+    """Accepts a CSV upload and returns per-zone centroid points with max flow and a
+    normalized weight suitable for constructing a heatmap on the frontend.
+
+    Request: multipart/form-data with key 'file' -> CSV
+             optional form fields: 'grid_size' (ignored here, kept for parity),
+             'flow_candidates' (comma-separated column names to prefer)
+    Response: JSON { points: [[lat, lon, weight, zone, max_flow], ...], bounds: [minLat, minLon, maxLat, maxLon], zone_col, flow_col }
+    """
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided. Please upload CSV with key 'file'."}), 400
+
+        file = request.files["file"]
+        try:
+            df = pd.read_csv(file)
+        except Exception as e:
+            return jsonify({"error": f"Failed to read CSV: {e}"}), 400
+
+        def norm_col(c: str) -> str:
+            return str(c).lower().strip().replace(" ", "_").replace("-", "_").replace("__", "_")
+
+        incoming = {norm_col(c): c for c in df.columns}
+
+        # identify zone column
+        zone_candidates = ["zone_id", "zone", "area", "zoneid", "zone_name"]
+        zone_col = None
+        for k, orig in incoming.items():
+            if k in zone_candidates:
+                zone_col = orig
+                break
+        if not zone_col:
+            # try fuzzy match by substring
+            for k, orig in incoming.items():
+                if any(x in k for x in ["zone", "area"]):
+                    zone_col = orig
+                    break
+
+        if not zone_col:
+            return jsonify({"error": "No zone/area column found in CSV. Expected one of: zone_id, zone, area, zoneid"}), 400
+
+        # identify latitude / longitude columns (optional but recommended)
+        lat_candidates = ["latitude", "lat", "y", "lat_dd"]
+        lon_candidates = ["longitude", "lon", "lng", "long", "long_dd"]
+        lat_col = None
+        lon_col = None
+        for k, orig in incoming.items():
+            if not lat_col and k in lat_candidates:
+                lat_col = orig
+            if not lon_col and k in lon_candidates:
+                lon_col = orig
+
+        # identify best flow column from common candidates or user-supplied list
+        default_flow_candidates = [
+            "flowrate_lps", "flow_rate_lps", "flowrate", "flow_rate",
+            "water_supplied_litres", "water_supplied", "water_consumed_litres", "water_consumed",
+            "flow_lps", "max_flow"
+        ]
+        # allow override from form
+        fc = request.form.get("flow_candidates")
+        if fc:
+            user_cands = [norm_col(x) for x in fc.split(",") if x.strip()]
+            # prepend user-specified to default search order
+            search_candidates = user_cands + default_flow_candidates
+        else:
+            search_candidates = default_flow_candidates
+
+        flow_col = None
+        for cand in search_candidates:
+            if cand in incoming:
+                flow_col = incoming[cand]
+                break
+            # also try compact match
+            compact = cand.replace("_", "")
+            matched = next((orig for k, orig in incoming.items() if k.replace("_", "") == compact), None)
+            if matched:
+                flow_col = matched
+                break
+
+        if not flow_col:
+            return jsonify({"error": "No flow-related column found in CSV. Please include a column like 'flowrate_lps' or 'water_supplied_litres', or pass flow_candidates form field."}), 400
+
+        # Group by zone and compute max flow and centroid (if lat/lon available)
+        results = []
+        grouped = df.groupby(zone_col)
+        for zone_name, grp in grouped:
+            # coerce flow to numeric
+            try:
+                vals = pd.to_numeric(grp[flow_col], errors="coerce").dropna()
+                max_flow = float(vals.max()) if not vals.empty else 0.0
+            except Exception:
+                max_flow = 0.0
+
+            lat_val = None
+            lon_val = None
+            if lat_col and lon_col and lat_col in grp.columns and lon_col in grp.columns:
+                try:
+                    lat_val = float(pd.to_numeric(grp[lat_col], errors="coerce").dropna().mean())
+                    lon_val = float(pd.to_numeric(grp[lon_col], errors="coerce").dropna().mean())
+                except Exception:
+                    lat_val = None
+                    lon_val = None
+
+            results.append({"zone": zone_name, "max_flow": max_flow, "lat": lat_val, "lon": lon_val})
+
+        # Filter out zones without coordinates for heatmap points; still return their numbers
+        points = []
+        flows = [r["max_flow"] for r in results]
+        if not flows:
+            return jsonify({"error": "No zones found in CSV."}), 400
+
+        fmin = min(flows)
+        fmax = max(flows)
+        for r in results:
+            if r["lat"] is None or r["lon"] is None:
+                # skip spatial-less zones for heatmap plotting
+                continue
+            if fmax > fmin:
+                weight = (r["max_flow"] - fmin) / (fmax - fmin)
+            else:
+                weight = 1.0
+            points.append([r["lat"], r["lon"], weight, r["zone"], r["max_flow"]])
+
+        if not points:
+            # no spatial points available; return per-zone stats so frontend can decide
+            return jsonify({"points": [], "zones": results, "message": "No latitude/longitude present for zones. Zones provided with max_flow values."}), 200
+
+        lats = [p[0] for p in points]
+        lons = [p[1] for p in points]
+        bounds = [min(lats), min(lons), max(lats), max(lons)]
+
+        return jsonify({"points": points, "bounds": bounds, "zone_col": zone_col, "flow_col": flow_col})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 if __name__ == "__main__":
     print("✅ Flask backend running on http://127.0.0.1:5000")
     app.run(host="0.0.0.0", port=5000, debug=True)
