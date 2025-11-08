@@ -128,6 +128,19 @@ const RetrainModel = () => {
                 {result.message && (
                   <p className="text-muted-foreground mt-2">{result.message}</p>
                 )}
+                {result.warnings && result.warnings.length > 0 && (
+                  <div className="mt-2 text-sm text-yellow-600">
+                    <strong>Warnings:</strong>
+                    <ul className="list-disc pl-5 mt-1">
+                      {result.warnings.map((w: string, i: number) => (
+                        <li key={i}>{w}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {result.used_dummy && (
+                  <p className="text-sm text-muted-foreground mt-2">A fallback dummy model was saved because training data was incomplete.</p>
+                )}
               </div>
             </div>
           </div>

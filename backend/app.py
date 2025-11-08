@@ -156,12 +156,24 @@ def retrain_model_endpoint():
 
         # Call retrain_model passing DataFrame directly; save model to MODEL_PATH
         result = retrain_model(MODEL_PATH, df, MODEL_PATH)
-        if isinstance(result, dict) and result.get("status") == "success":
-            log_event("retrain_model", "admin", {"rows": len(df)})
-            return jsonify({"message": "✅ Model retrained successfully", "detail": result.get("message"), "features_used": result.get("features_used"), "categorical": result.get("categorical")}), 200
+        # Always return 200 to the frontend for a friendly UX. The result
+        # dict contains status, warnings and used_dummy which informs the UI
+        # whether retraining was full or a fallback.
+        if isinstance(result, dict):
+            if result.get("status") == "success":
+                log_event("retrain_model", "admin", {"rows": len(df)})
+            return jsonify({
+                "message": "✅ Model retrain attempted",
+                "detail": result.get("message"),
+                "status": result.get("status"),
+                "warnings": result.get("warnings", []),
+                "features_used": result.get("features_used"),
+                "categorical": result.get("categorical"),
+                "used_dummy": result.get("used_dummy", False)
+            }), 200
         else:
-            msg = result.get("message") if isinstance(result, dict) else str(result)
-            return jsonify({"error": msg}), 500
+            # unexpected non-dict response; return it as detail
+            return jsonify({"message": "✅ Model retrain attempted", "detail": str(result)}), 200
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500

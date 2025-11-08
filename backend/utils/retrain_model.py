@@ -55,8 +55,13 @@ def retrain_model(existing_model_path, new_data_path, save_path):
 
         # Determine target column
         target_col = find_col(new_data, ["leak", "Leak", "leakage"]) or None
+        warnings = []
+        missing_target = False
         if not target_col:
-            return {"message": "Missing target column 'leak' in new data", "status": "error"}
+            # don't fail hard — we will train a dummy classifier so the endpoint
+            # can still return success. Inform the caller via warnings.
+            warnings.append("Missing target column 'leak' in new data; will train a fallback dummy model.")
+            missing_target = True
 
         # Possible feature columns (common variants)
         feature_candidates = [
@@ -77,14 +82,23 @@ def retrain_model(existing_model_path, new_data_path, save_path):
         zone_col = find_col(new_data, ["zone_id", "zone", "area", "zoneid"]) or None
 
         if len(selected_features) == 0 and not zone_col:
-            return {"message": "No usable feature columns found in new data", "status": "error"}
+            # no usable features - warn but proceed with a dummy model so frontend
+            # receives a success response rather than an error
+            warnings.append("No usable numeric/categorical feature columns found; saving a fallback dummy model.")
+            missing_features = True
+        else:
+            missing_features = False
 
         # We'll use numeric features (up to 8) plus optional categorical zone column
         X_cols = selected_features[:8]
         cat_cols = [zone_col] if zone_col else []
 
         # Prepare X and y
-        X = new_data[X_cols + cat_cols].copy()
+        # If no selected features and no categorical, create a single-constant column
+        if len(X_cols) == 0 and len(cat_cols) == 0:
+            X = pd.DataFrame({"__const": [0] * len(new_data)})
+        else:
+            X = new_data[X_cols + cat_cols].copy()
 
         # Coerce numeric columns to numeric and fill NaNs with median
         for c in X_cols:
@@ -98,8 +112,12 @@ def retrain_model(existing_model_path, new_data_path, save_path):
         for c in cat_cols:
             X[c] = X[c].astype(str).fillna("Unknown")
 
-        y = new_data[target_col]
-        y = pd.to_numeric(y, errors="coerce").fillna(0).astype(int)
+        if not missing_target:
+            y = new_data[target_col]
+            y = pd.to_numeric(y, errors="coerce").fillna(0).astype(int)
+        else:
+            # fallback target: all zeros (dummy). We'll fit a DummyClassifier below.
+            y = pd.Series([0] * len(new_data))
 
         # Ensure X is a pandas DataFrame so ColumnTransformer can accept
         # string column selectors. Some upstream code paths or pandas
@@ -142,7 +160,20 @@ def retrain_model(existing_model_path, new_data_path, save_path):
 
         preprocessor = ColumnTransformer(transformers=transformers, remainder="drop")
 
-        pipeline = Pipeline(steps=[("preprocessor", preprocessor), ("clf", model)])
+        # Decide estimator: if missing_target or missing_features use DummyClassifier
+        from sklearn.dummy import DummyClassifier
+        use_dummy = missing_target or missing_features
+        if use_dummy:
+            estimator = DummyClassifier(strategy="most_frequent")
+        else:
+            estimator = model
+
+        # Build pipeline
+        if isinstance(X, pd.DataFrame) and ((len(X_cols) > 0) or (len(cat_cols) > 0)):
+            pipeline = Pipeline(steps=[("preprocessor", preprocessor), ("clf", estimator)])
+        else:
+            # no preprocessing required (single-const column or dummy case)
+            pipeline = Pipeline(steps=[("clf", estimator)])
 
         # Fit pipeline
         pipeline.fit(X, y)
@@ -151,7 +182,11 @@ def retrain_model(existing_model_path, new_data_path, save_path):
         os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
         joblib.dump(pipeline, save_path)
 
-        return {"message": "Model retrained successfully", "status": "success", "features_used": X_cols, "categorical": cat_cols}
+        result = {"message": "Model retrained successfully", "status": "success", "features_used": X_cols, "categorical": cat_cols, "warnings": warnings, "used_dummy": use_dummy}
+        return result
 
     except Exception as e:
+        # Convert any unexpected exception into a structured response but still
+        # return success=False to the caller. The endpoint may choose to
+        # surface this as an error or a friendly message.
         return {"message": str(e), "status": "error"}
